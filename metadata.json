@@ -1,0 +1,6 @@
+{
+  "name": "Secure Private Dashboard",
+  "description": "A minimalist, private web application and secure server dashboard for storing and retrieving confidential personal records.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
