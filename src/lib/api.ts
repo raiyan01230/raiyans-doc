@@ -24,6 +24,12 @@ import {
   SecurityPolicyConfig,
   AuditChainVerificationReport,
   SyncConflict,
+  CentralBlockedOverview,
+  BlockedAccountEntity,
+  BlockedCountryEntity,
+  BlockHistoryEvent,
+  OwnerAccessLink,
+  MultiLayerEvaluation,
 } from '../types';
 
 let currentAuthToken: string | null = null;
@@ -690,8 +696,116 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(settings),
     });
+  },
+
+  // -------------------------------------------------------------
+  // DYNAMIC SOC API METHODS
+  // -------------------------------------------------------------
+  async getCentralBlockedOverview(): Promise<CentralBlockedOverview> {
+    return request<CentralBlockedOverview>('/api/security/blocked');
+  },
+
+  async getBlockedAccounts(): Promise<{ accounts: BlockedAccountEntity[] }> {
+    return request<{ accounts: BlockedAccountEntity[] }>('/api/security/blocked/accounts');
+  },
+
+  async banAccount(userId: string, reason: string, incidentId?: string, email?: string, displayName?: string): Promise<{ success: boolean; account: BlockedAccountEntity; banState: string }> {
+    return request(`/api/security/blocked/accounts/${encodeURIComponent(userId)}/ban`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, incidentId, email, displayName }),
+    });
+  },
+
+  async unbanAccount(userId: string, reason?: string): Promise<{
+    success: boolean;
+    accountState: string;
+    banState: string;
+    audit: string;
+    evaluation: MultiLayerEvaluation;
+  }> {
+    return request(`/api/security/blocked/accounts/${encodeURIComponent(userId)}/unban`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async getAccountEvaluation(userId: string, ip?: string, deviceId?: string, sessionId?: string): Promise<{ userId: string; evaluation: MultiLayerEvaluation }> {
+    const params = new URLSearchParams();
+    if (ip) params.append('ip', ip);
+    if (deviceId) params.append('deviceId', deviceId);
+    if (sessionId) params.append('sessionId', sessionId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request(`/api/security/accounts/${encodeURIComponent(userId)}/evaluation${qs}`);
+  },
+
+  async getRestoreDetails(entityId: string): Promise<any> {
+    return request(`/api/security/restore/${encodeURIComponent(entityId)}`);
+  },
+
+  async executeRestoreAction(entityId: string, action: string): Promise<{
+    success: boolean;
+    restoredActions: string[];
+    evaluation: MultiLayerEvaluation;
+  }> {
+    return request(`/api/security/restore/${encodeURIComponent(entityId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+  },
+
+  async unblockIpAddress(ip: string): Promise<{ success: boolean; ip: string; status: string }> {
+    return request(`/api/security/ip/${encodeURIComponent(ip)}/unblock`, { method: 'POST' });
+  },
+
+  async restoreDeviceTrust(deviceId: string): Promise<{ success: boolean; device: RecognizedDevice; status: string }> {
+    return request(`/api/security/devices/${encodeURIComponent(deviceId)}/restore`, { method: 'POST' });
+  },
+
+  async releaseSessionQuarantine(sessionId: string): Promise<{ success: boolean; sessionId: string; status: string; message: string; permanentlyRevoked?: boolean }> {
+    return request(`/api/security/sessions/${encodeURIComponent(sessionId)}/release-quarantine`, { method: 'POST' });
+  },
+
+  async getBlockHistory(): Promise<{ history: BlockHistoryEvent[]; totalCount: number }> {
+    return request('/api/security/blocked/history');
+  },
+
+  async getAccessLinks(): Promise<{ links: OwnerAccessLink[] }> {
+    return request('/api/security/access-links');
+  },
+
+  async createAccessLink(data: {
+    label: string;
+    recipient?: string;
+    scope?: string;
+    expirationHours?: number;
+    maxUses?: number;
+  }): Promise<{ success: boolean; link: OwnerAccessLink }> {
+    return request('/api/security/access-links', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async revokeAccessLink(id: string): Promise<{ success: boolean; link: OwnerAccessLink }> {
+    return request(`/api/security/access-links/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+  },
+
+  async getBlockedCountries(): Promise<{ countries: BlockedCountryEntity[] }> {
+    return request('/api/security/countries');
+  },
+
+  async blockCountry(countryCode: string, countryName?: string, reason?: string): Promise<{ success: boolean; country: BlockedCountryEntity }> {
+    return request('/api/security/countries/block', {
+      method: 'POST',
+      body: JSON.stringify({ countryCode, countryName, reason }),
+    });
+  },
+
+  async unblockCountry(countryCode: string): Promise<{ success: boolean; countryCode: string }> {
+    return request(`/api/security/countries/${encodeURIComponent(countryCode)}`, { method: 'DELETE' });
   }
 };
+
 
 export interface SecurityIncident {
   incident_id: string;

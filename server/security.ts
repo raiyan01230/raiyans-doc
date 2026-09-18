@@ -174,3 +174,31 @@ export function checkAccountFrozen(req: any, res: Response, next: NextFunction) 
 
   next();
 }
+
+// -------------------------------------------------------------
+// ACCOUNT BANNED MIDDLEWARE
+// -------------------------------------------------------------
+export function checkAccountBanned(req: any, res: Response, next: NextFunction) {
+  const userId = req.user?.id || DEMO_USER_ID;
+  const bannedAcc = store.blockedAccounts.get(userId);
+  if (bannedAcc && (bannedAcc.status === 'BANNED' || bannedAcc.status === 'RESTRICTED')) {
+    const isAllowedPath =
+      req.path === '/api/security/unban' ||
+      req.path.includes('/unban') ||
+      req.path === '/api/security/status' ||
+      req.path.startsWith('/api/security/blocked') ||
+      req.path.startsWith('/api/security/restore');
+
+    if (!isAllowedPath) {
+      return res.status(403).json({
+        error: 'AccountBanned',
+        message: `Account Ban Active: ${bannedAcc.reason || 'Account access is currently revoked'}`,
+        status: bannedAcc.status,
+        reason: bannedAcc.reason,
+        blocked_at: bannedAcc.blocked_at,
+      });
+    }
+  }
+  next();
+}
+

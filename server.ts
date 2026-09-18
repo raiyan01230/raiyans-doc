@@ -13,6 +13,10 @@ import {
   StoredFileMetadata,
   StoredSecuritySession,
   StoredBlockedIP,
+  StoredBlockedAccount,
+  StoredBlockedCountry,
+  StoredBlockHistory,
+  StoredAccessLink,
 } from './server/store';
 import {
   recordRequestLog,
@@ -52,6 +56,7 @@ import {
   updateDeviceTrustStatus,
   updateDeviceCustomLabel,
   parseDetailedUserAgent,
+  userDeviceStore,
 } from './server/deviceIntelligence';
 import {
   createActiveSession,
@@ -1736,6 +1741,592 @@ app.use(analyzeRequestForThreats);
     });
 
     res.json({ success: true, id });
+  });
+
+  // -------------------------------------------------------------
+  // DYNAMIC SECURITY OPERATIONS CENTER (SOC) ENDPOINTS
+  // -------------------------------------------------------------
+
+  // Multi-layer Restriction Evaluator Helper
+  function evaluateAccountRestrictions(userId: string, reqIp?: string, reqDeviceId?: string, reqSessionId?: string) {
+    const accountSecurity = store.accountSecurity.get(userId);
+    const blockedAccount = store.blockedAccounts.get(userId);
+    const now = new Date().toISOString();
+
+    const isFrozen = Boolean(accountSecurity?.is_frozen);
+    const isBanned = blockedAccount?.status === 'BANNED' || blockedAccount?.status === 'RESTRICTED';
+
+    const targetIp = reqIp || '127.0.0.1';
+    const activeIpBlock = store.blockedIPs.find(b => {
+      if (!b.is_active) return false;
+      if (b.expires_at && b.expires_at < now) return false;
+      if (b.is_cidr) return isIpInCidr(targetIp, b.ip_address);
+      return b.ip_address === targetIp;
+    });
+
+    let deviceStatus = 'TRUSTED';
+    if (reqDeviceId) {
+      const userDevices = userDeviceStore.get(userId);
+      const dev = userDevices?.get(reqDeviceId);
+      if (dev) {
+        if (dev.trustStatus === 'revoked') deviceStatus = 'REVOKED';
+        else if (dev.trustStatus === 'untrusted') deviceStatus = 'UNTRUSTED';
+      }
+    }
+
+    let sessionQuarantined = false;
+    if (reqSessionId && sessionQuarantine.has(String(reqSessionId))) {
+      sessionQuarantined = true;
+    }
+
+    const activeRestrictions: string[] = [];
+    if (isBanned) activeRestrictions.push(`ACCOUNT BAN (${blockedAccount?.reason || 'Access revoked'})`);
+    if (isFrozen) activeRestrictions.push(`ACCOUNT FREEZE (${accountSecurity?.freeze_reason || 'Administrative hold'})`);
+    if (activeIpBlock) activeRestrictions.push(`IP BLOCK (${activeIpBlock.ip_address})`);
+    if (deviceStatus === 'REVOKED') activeRestrictions.push(`DEVICE REVOCATION (${reqDeviceId || 'Hardware ID'})`);
+    if (deviceStatus === 'UNTRUSTED') activeRestrictions.push(`DEVICE UNTRUSTED (${reqDeviceId || 'Hardware ID'})`);
+    if (sessionQuarantined) activeRestrictions.push(`SESSION QUARANTINE (${reqSessionId || 'Active Session'})`);
+
+    const hasRemainingRestrictions = activeRestrictions.length > 0;
+
+    return {
+      isFullyAccessible: !hasRemainingRestrictions,
+      hasRemainingRestrictions,
+      accountStatus: isBanned ? 'BANNED' : isFrozen ? 'FROZEN' : 'ACTIVE',
+      accountBanReason: blockedAccount?.reason || null,
+      accountFreezeReason: accountSecurity?.freeze_reason || null,
+      ipStatus: activeIpBlock ? 'BLOCKED' : 'ALLOWED',
+      blockedIp: activeIpBlock?.ip_address || null,
+      deviceStatus,
+      sessionStatus: sessionQuarantined ? 'QUARANTINED' : 'ACTIVE',
+      activeRestrictions,
+      evalSummary: hasRemainingRestrictions
+        ? `ACCOUNT BAN REMOVED BUT ACCESS STILL RESTRICTED BY: ${activeRestrictions.join(', ')}`
+        : 'ALL SECURITY RESTRICTIONS CLEARED — ACCOUNT FULLY ACCESSIBLE',
+    };
+  }
+
+  // Central Block Overview Hub
+  app.get('/api/security/blocked', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const now = new Date().toISOString();
+
+    // Accounts
+    const blockedAccounts = Array.from(store.blockedAccounts.values());
+
+    // IPs
+    const blockedIPs = store.blockedIPs.filter(b => {
+      if (!b.is_active) return false;
+      if (b.expires_at && b.expires_at < now) {
+        b.is_active = false;
+        return false;
+      }
+      return true;
+    });
+
+    // Devices (Untrusted / Revoked)
+    const blockedDevices: any[] = [];
+    userDeviceStore.forEach((deviceMap, uId) => {
+      deviceMap.forEach(d => {
+        if (d.trustStatus === 'untrusted' || d.trustStatus === 'revoked') {
+          blockedDevices.push({ ...d, userId: uId });
+        }
+      });
+    });
+
+    // Sessions (Quarantined)
+    const blockedSessions = store.sessions.filter(s => sessionQuarantine.has(s.id) || !s.is_active);
+
+    // Countries
+    const blockedCountries = Array.from(store.blockedCountries.values()).filter(c => c.status === 'BLOCKED' || c.status === 'RESTRICTED');
+
+    // History
+    const history = store.blockHistory.slice(0, 50);
+
+    const counts = {
+      totalBlocked: blockedAccounts.length + blockedIPs.length + blockedDevices.length + blockedSessions.length + blockedCountries.length,
+      bannedAccounts: blockedAccounts.filter(a => a.status === 'BANNED').length,
+      blockedIps: blockedIPs.length,
+      revokedDevices: blockedDevices.length,
+      quarantinedSessions: blockedSessions.length,
+      blockedCountries: blockedCountries.length,
+    };
+
+    res.json({
+      counts,
+      blockedAccounts,
+      blockedIPs,
+      blockedDevices,
+      blockedSessions,
+      blockedCountries,
+      blockHistory: history,
+    });
+  });
+
+  // Blocked Accounts List
+  app.get('/api/security/blocked/accounts', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    res.json({ accounts: Array.from(store.blockedAccounts.values()) });
+  });
+
+  // Ban Person / Account
+  app.post('/api/security/blocked/accounts/:userId/ban', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const targetUserId = req.params.userId;
+    const { reason, incidentId, email, displayName } = req.body;
+    const cleanReason = (reason || 'Security policy violation — administrative ban').trim();
+    const now = new Date().toISOString();
+
+    const entry: StoredBlockedAccount = {
+      account_id: targetUserId,
+      user_id: targetUserId,
+      email: email || (targetUserId === DEMO_USER_ID ? 'raiyan3945@gmail.com' : `${targetUserId}@private-vault.internal`),
+      display_name: displayName || (targetUserId === DEMO_USER_ID ? 'Owner Account (Raiyan)' : 'Restricted Account'),
+      status: 'BANNED',
+      reason: cleanReason,
+      incident_id: incidentId,
+      blocked_at: now,
+      blocked_by: `@${req.user!.username}`,
+      expires_at: null,
+      active_sessions: 0,
+      devices: [],
+      recent_ips: [getClientIp(req)],
+      updated_at: now,
+    };
+
+    store.blockedAccounts.set(targetUserId, entry);
+
+    // Terminate all sessions for target user
+    store.sessions.forEach(s => {
+      if (s.user_id === targetUserId) {
+        s.is_active = false;
+        sessionQuarantine.add(s.id);
+      }
+    });
+
+    // Record block history & audit
+    const blockEvt: StoredBlockHistory = {
+      event_id: `blk_evt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      entity_type: 'ACCOUNT',
+      entity_id: targetUserId,
+      entity_label: entry.email,
+      previous_state: 'ACTIVE',
+      new_state: 'BANNED',
+      actor: `@${req.user!.username}`,
+      timestamp: now,
+      reason: cleanReason,
+      related_incident_id: incidentId,
+    };
+    store.blockHistory.unshift(blockEvt);
+
+    recordAuditEvent({
+      userId: req.user!.id,
+      eventType: 'account_banned',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'] as string,
+      resourceType: 'account',
+      resourceId: targetUserId,
+      success: true,
+      metadata: { reason: cleanReason, incidentId },
+    });
+
+    // Trigger Resend email notification
+    sendSecurityEmail({
+      subject: `[PRIVATE VAULT] CRITICAL SECURITY ACTION: ACCOUNT BANNED (${entry.email})`,
+      eventSummary: `Account ${targetUserId} (${entry.email}) has been placed under BANNED status. All active sessions terminated.`,
+      eventType: 'account_banned',
+      severity: 'CRITICAL',
+      details: {
+        status: 'BANNED',
+        actionsTaken: ['✓ Account status set to BANNED', '✓ All active sessions terminated', '✓ Session quarantine enforced'],
+        evidence: [cleanReason],
+      },
+    }).catch(err => console.error('[ACCOUNT_BAN_EMAIL_ERROR]', err));
+
+    broadcastSyncEvent(req.user!.id, 'account_banned', { userId: targetUserId, entry });
+    res.json({ success: true, account: entry, banState: 'BANNED' });
+  });
+
+  // UNBAN Account Route (Dynamic Server Enforcement & Multi-Layer Evaluation)
+  app.post('/api/security/blocked/accounts/:userId/unban', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const targetUserId = req.params.userId;
+    const { reason } = req.body;
+    const cleanReason = (reason || 'Owner manual unban — identity verified').trim();
+    const now = new Date().toISOString();
+
+    const existing = store.blockedAccounts.get(targetUserId);
+    const prevStatus = existing?.status || 'BANNED';
+
+    // Update account state to ACTIVE
+    if (existing) {
+      existing.status = 'ACTIVE';
+      existing.updated_at = now;
+      existing.reason = `Unbanned: ${cleanReason}`;
+    } else {
+      store.blockedAccounts.set(targetUserId, {
+        account_id: targetUserId,
+        user_id: targetUserId,
+        email: targetUserId === DEMO_USER_ID ? 'raiyan3945@gmail.com' : `${targetUserId}@private-vault.internal`,
+        display_name: targetUserId === DEMO_USER_ID ? 'Owner Account (Raiyan)' : 'User Account',
+        status: 'ACTIVE',
+        reason: `Unbanned: ${cleanReason}`,
+        blocked_at: now,
+        blocked_by: `@${req.user!.username}`,
+        expires_at: null,
+        active_sessions: 0,
+        devices: [],
+        recent_ips: [],
+        updated_at: now,
+      });
+    }
+
+    // Unfreeze in accountSecurity if frozen
+    const sec = store.accountSecurity.get(targetUserId);
+    if (sec && sec.is_frozen) {
+      sec.is_frozen = false;
+      sec.freeze_reason = null;
+      sec.updated_at = now;
+    }
+
+    // Record block history
+    const blockEvt: StoredBlockHistory = {
+      event_id: `blk_evt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      entity_type: 'ACCOUNT',
+      entity_id: targetUserId,
+      entity_label: existing?.email || targetUserId,
+      previous_state: prevStatus,
+      new_state: 'ACTIVE',
+      actor: `@${req.user!.username}`,
+      timestamp: now,
+      reason: cleanReason,
+      related_incident_id: existing?.incident_id,
+    };
+    store.blockHistory.unshift(blockEvt);
+
+    recordAuditEvent({
+      userId: req.user!.id,
+      eventType: 'account_unbanned',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'] as string,
+      resourceType: 'account',
+      resourceId: targetUserId,
+      success: true,
+      metadata: { reason: cleanReason, previousState: prevStatus },
+    });
+
+    // Multi-layer restriction evaluation
+    const evaluation = evaluateAccountRestrictions(targetUserId, getClientIp(req), req.headers['x-device-id'] as string, req.headers['x-session-id'] as string);
+
+    // Trigger Email
+    sendSecurityEmail({
+      subject: `[PRIVATE VAULT] SECURITY ACTION: ACCOUNT UNBANNED (${targetUserId})`,
+      eventSummary: `Account ban was successfully REMOVED for user ${targetUserId}. ${evaluation.evalSummary}`,
+      eventType: 'account_unbanned',
+      severity: 'HIGH',
+      details: {
+        status: 'ACTIVE',
+        actionsTaken: [
+          '✓ Account ban status set to ACTIVE',
+          '✓ Account freeze lifted if present',
+          '✓ Unban event logged in audit history',
+          `✓ Multi-layer check: ${evaluation.hasRemainingRestrictions ? 'Remaining blocks detected' : 'Fully restored'}`,
+        ],
+        evidence: [cleanReason],
+      },
+    }).catch(err => console.error('[ACCOUNT_UNBAN_EMAIL_ERROR]', err));
+
+    broadcastSyncEvent(req.user!.id, 'account_unbanned', { userId: targetUserId, evaluation });
+
+    res.json({
+      success: true,
+      accountState: 'ACTIVE',
+      banState: 'REMOVED',
+      audit: 'CREATED',
+      previousState: prevStatus,
+      evaluation,
+    });
+  });
+
+  // Multi-layer evaluation endpoint for account
+  app.get('/api/security/accounts/:userId/evaluation', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const targetUserId = req.params.userId;
+    const reqIp = (req.query.ip as string) || getClientIp(req);
+    const reqDeviceId = req.query.deviceId as string;
+    const reqSessionId = req.query.sessionId as string;
+
+    const evaluation = evaluateAccountRestrictions(targetUserId, reqIp, reqDeviceId, reqSessionId);
+    res.json({ userId: targetUserId, evaluation });
+  });
+
+  // Restoration Workflow Endpoint (/security/restore/:entityId)
+  app.get('/api/security/restore/:entityId', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const entityId = req.params.entityId;
+    const evaluation = evaluateAccountRestrictions(entityId === 'owner' || entityId === 'me' ? req.user!.id : entityId);
+
+    const entityDetails = {
+      entityId,
+      account: store.blockedAccounts.get(entityId) || { status: evaluation.accountStatus, reason: evaluation.accountBanReason },
+      ipBlock: store.blockedIPs.find(b => b.is_active && b.ip_address === entityId) || null,
+      device: userDeviceStore.get(req.user!.id)?.get(entityId) || null,
+      sessionQuarantined: sessionQuarantine.has(entityId),
+      evaluation,
+    };
+
+    res.json(entityDetails);
+  });
+
+  app.post('/api/security/restore/:entityId', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const entityId = req.params.entityId;
+    const { action } = req.body; // 'UNBAN_ACCOUNT' | 'UNBLOCK_IP' | 'RESTORE_DEVICE' | 'RELEASE_SESSION' | 'RESTORE_ALL_ELIGIBLE'
+    const targetUserId = entityId === 'owner' || entityId === 'me' ? req.user!.id : entityId;
+    const now = new Date().toISOString();
+    const restoredActions: string[] = [];
+
+    if (action === 'UNBAN_ACCOUNT' || action === 'RESTORE_ALL_ELIGIBLE') {
+      const acc = store.blockedAccounts.get(targetUserId);
+      if (acc) {
+        acc.status = 'ACTIVE';
+        acc.updated_at = now;
+      }
+      const sec = store.accountSecurity.get(targetUserId);
+      if (sec) {
+        sec.is_frozen = false;
+      }
+      restoredActions.push('Unbanned Account & Lifted Freeze');
+    }
+
+    if (action === 'UNBLOCK_IP' || action === 'RESTORE_ALL_ELIGIBLE') {
+      store.blockedIPs.forEach(b => {
+        if (b.ip_address === entityId || action === 'RESTORE_ALL_ELIGIBLE') {
+          b.is_active = false;
+        }
+      });
+      restoredActions.push('Unblocked IP Address Rules');
+    }
+
+    if (action === 'RESTORE_DEVICE' || action === 'RESTORE_ALL_ELIGIBLE') {
+      updateDeviceTrustStatus(targetUserId, entityId, 'trusted');
+      restoredActions.push('Restored Device Hardware Trust');
+    }
+
+    if (action === 'RELEASE_SESSION' || action === 'RESTORE_ALL_ELIGIBLE') {
+      if (sessionQuarantine.has(entityId)) {
+        sessionQuarantine.delete(entityId);
+        restoredActions.push('Released Session Quarantine');
+      } else if (action === 'RESTORE_ALL_ELIGIBLE') {
+        sessionQuarantine.clear();
+        restoredActions.push('Cleared All Session Quarantines');
+      }
+    }
+
+    // Record audit event
+    recordAuditEvent({
+      userId: req.user!.id,
+      eventType: 'access_restored',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'] as string,
+      resourceType: 'security_restore',
+      resourceId: entityId,
+      success: true,
+      metadata: { actionExecuted: action, restoredActions },
+    });
+
+    const evaluation = evaluateAccountRestrictions(targetUserId);
+    res.json({
+      success: true,
+      restoredActions,
+      evaluation,
+    });
+  });
+
+  // IP Blocklist Management
+  app.get('/api/security/ip', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    res.json({ blockedIps: store.blockedIPs, totalCount: store.blockedIPs.length });
+  });
+
+  app.post('/api/security/ip/:ip/unblock', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const ipToUnblock = req.params.ip;
+    let found = false;
+
+    store.blockedIPs.forEach(b => {
+      if (b.ip_address === ipToUnblock || b.id === ipToUnblock) {
+        b.is_active = false;
+        found = true;
+      }
+    });
+
+    if (found) {
+      store.blockHistory.unshift({
+        event_id: `blk_evt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+        entity_type: 'IP',
+        entity_id: ipToUnblock,
+        entity_label: ipToUnblock,
+        previous_state: 'BLOCKED',
+        new_state: 'UNBLOCKED',
+        actor: `@${req.user!.username}`,
+        timestamp: new Date().toISOString(),
+        reason: 'Owner manual IP unblock',
+      });
+
+      broadcastSyncEvent(req.user!.id, 'ip_unblocked', { ip: ipToUnblock });
+      return res.json({ success: true, ip: ipToUnblock, status: 'UNBLOCKED' });
+    }
+
+    res.status(404).json({ error: 'IP address not found in blocklist' });
+  });
+
+  // Restore Device Route
+  app.post('/api/security/devices/:id/restore', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const deviceId = req.params.id;
+    const userId = req.user!.id;
+
+    const dev = updateDeviceTrustStatus(userId, deviceId, 'trusted');
+    if (!dev) return res.status(404).json({ error: 'Device not found' });
+
+    store.blockHistory.unshift({
+      event_id: `blk_evt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      entity_type: 'DEVICE',
+      entity_id: deviceId,
+      entity_label: dev.customLabel || dev.deviceLabel || deviceId,
+      previous_state: dev.trustStatus,
+      new_state: 'TRUSTED',
+      actor: `@${req.user!.username}`,
+      timestamp: new Date().toISOString(),
+      reason: 'Owner restored device hardware trust',
+    });
+
+    broadcastSyncEvent(userId, 'device_restored', { device: dev });
+    res.json({ success: true, device: dev, status: 'TRUSTED' });
+  });
+
+  // Release Session Quarantine Route
+  app.post('/api/security/sessions/:id/release-quarantine', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const sessionId = req.params.id;
+    const session = store.sessions.find(s => s.id === sessionId);
+
+    if (!session || !session.is_active) {
+      return res.json({
+        success: false,
+        permanentlyRevoked: true,
+        message: 'Session permanently revoked or expired. User must authenticate again.',
+      });
+    }
+
+    sessionQuarantine.delete(sessionId);
+
+    store.blockHistory.unshift({
+      event_id: `blk_evt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      entity_type: 'SESSION',
+      entity_id: sessionId,
+      entity_label: session.device_summary || sessionId,
+      previous_state: 'QUARANTINED',
+      new_state: 'ACTIVE',
+      actor: `@${req.user!.username}`,
+      timestamp: new Date().toISOString(),
+      reason: 'Owner released session quarantine',
+    });
+
+    broadcastSyncEvent(req.user!.id, 'session_released', { sessionId });
+    res.json({ success: true, sessionId, status: 'ACTIVE', message: 'Session quarantine released successfully' });
+  });
+
+  // Block History Audit Trail Endpoint
+  app.get('/api/security/blocked/history', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    res.json({ history: store.blockHistory, totalCount: store.blockHistory.length });
+  });
+
+  // Passwordless Access Links Endpoints
+  app.get('/api/security/access-links', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    res.json({ links: store.accessLinks });
+  });
+
+  app.post('/api/security/access-links', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const { label, recipient, scope, expirationHours, maxUses } = req.body;
+    const code = `lnk_${crypto.randomBytes(8).toString('hex')}`;
+    const baseUrl = 'https://raiyans-doc.onrender.com';
+    const linkUrl = `${baseUrl}/access/${code}`;
+    const expiresHours = Number(expirationHours) || 24;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresHours * 3600 * 1000).toISOString();
+
+    const newLink: StoredAccessLink = {
+      id: `link_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      label: (label || 'Temporary Vault Access').trim(),
+      recipient: (recipient || 'Authorized Auditor').trim(),
+      scope: scope || 'read_only',
+      code,
+      link_url: linkUrl,
+      expires_at: expiresAt,
+      is_revoked: false,
+      created_by: `@${req.user!.username}`,
+      created_at: now.toISOString(),
+      max_uses: Number(maxUses) || 5,
+      current_uses: 0,
+      last_used_at: null,
+    };
+
+    store.accessLinks.unshift(newLink);
+
+    recordAuditEvent({
+      userId: req.user!.id,
+      eventType: 'access_link_created',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'] as string,
+      resourceType: 'access_link',
+      resourceId: newLink.id,
+      success: true,
+      metadata: { label: newLink.label, linkUrl, expiresAt },
+    });
+
+    res.status(201).json({ success: true, link: newLink });
+  });
+
+  app.post('/api/security/access-links/:id/revoke', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const id = req.params.id;
+    const link = store.accessLinks.find(l => l.id === id || l.code === id);
+    if (!link) return res.status(404).json({ error: 'Access link not found' });
+
+    link.is_revoked = true;
+
+    recordAuditEvent({
+      userId: req.user!.id,
+      eventType: 'access_link_revoked',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'] as string,
+      resourceType: 'access_link',
+      resourceId: link.id,
+      success: true,
+    });
+
+    res.json({ success: true, link });
+  });
+
+  // Country Geofencing Block Endpoints
+  app.get('/api/security/countries', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    res.json({ countries: Array.from(store.blockedCountries.values()) });
+  });
+
+  app.post('/api/security/countries/block', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const { countryCode, countryName, reason } = req.body;
+    if (!countryCode) return res.status(400).json({ error: 'Country code required' });
+
+    const code = countryCode.toUpperCase();
+    const entry: StoredBlockedCountry = {
+      id: `cnt_${code}`,
+      country_code: code,
+      country_name: countryName || code,
+      status: 'BLOCKED',
+      reason: (reason || 'Geofence rule').trim(),
+      blocked_at: new Date().toISOString(),
+      blocked_by: `@${req.user!.username}`,
+      updated_at: new Date().toISOString(),
+    };
+
+    store.blockedCountries.set(code, entry);
+    res.json({ success: true, country: entry });
+  });
+
+  app.delete('/api/security/countries/:code', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+    const code = req.params.code.toUpperCase();
+    store.blockedCountries.delete(code);
+    res.json({ success: true, countryCode: code });
   });
 
   // Active Sessions Route

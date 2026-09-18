@@ -607,4 +607,94 @@ export interface ObservedIpRecord {
   requestCount: number;
 }
 
+export interface BlockedAccountEntity {
+  account_id: string;
+  user_id: string;
+  email: string;
+  display_name: string;
+  status: 'BANNED' | 'FROZEN' | 'RESTRICTED' | 'UNBANNED' | 'ACTIVE';
+  reason: string;
+  incident_id?: string;
+  blocked_at: string;
+  blocked_by: string;
+  expires_at: string | null;
+  active_sessions: number;
+  devices: string[];
+  recent_ips: string[];
+  updated_at: string;
+}
+
+export interface BlockedCountryEntity {
+  id: string;
+  country_code: string;
+  country_name: string;
+  status: 'BLOCKED' | 'RESTRICTED' | 'ALLOWED';
+  reason: string;
+  blocked_at: string;
+  blocked_by: string;
+  updated_at: string;
+}
+
+export interface BlockHistoryEvent {
+  event_id: string;
+  entity_type: 'ACCOUNT' | 'IP' | 'DEVICE' | 'SESSION' | 'COUNTRY' | 'LOCKDOWN';
+  entity_id: string;
+  entity_label: string;
+  previous_state: string;
+  new_state: string;
+  actor: string;
+  timestamp: string;
+  reason: string;
+  related_incident_id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface OwnerAccessLink {
+  id: string;
+  label: string;
+  recipient: string;
+  scope: string;
+  code: string;
+  link_url: string;
+  expires_at: string;
+  is_revoked: boolean;
+  created_by: string;
+  created_at: string;
+  max_uses: number;
+  current_uses: number;
+  last_used_at: string | null;
+}
+
+export interface MultiLayerEvaluation {
+  isFullyAccessible: boolean;
+  hasRemainingRestrictions: boolean;
+  accountStatus: 'ACTIVE' | 'BANNED' | 'FROZEN' | 'RESTRICTED';
+  accountBanReason: string | null;
+  accountFreezeReason: string | null;
+  ipStatus: 'ALLOWED' | 'BLOCKED';
+  blockedIp: string | null;
+  deviceStatus: string;
+  sessionStatus: 'ACTIVE' | 'QUARANTINED' | 'REVOKED';
+  activeRestrictions: string[];
+  evalSummary: string;
+}
+
+export interface CentralBlockedOverview {
+  counts: {
+    totalBlocked: number;
+    bannedAccounts: number;
+    blockedIps: number;
+    revokedDevices: number;
+    quarantinedSessions: number;
+    blockedCountries: number;
+  };
+  blockedAccounts: BlockedAccountEntity[];
+  blockedIPs: BlockedIP[];
+  blockedDevices: RecognizedDevice[];
+  blockedSessions: ActiveSessionRecord[];
+  blockedCountries: BlockedCountryEntity[];
+  blockHistory: BlockHistoryEvent[];
+}
+
+
 

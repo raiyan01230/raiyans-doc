@@ -147,6 +147,64 @@ export interface StoredAccountSecurity {
   updated_at: string;
 }
 
+export interface StoredBlockedAccount {
+  account_id: string;
+  user_id: string;
+  email: string;
+  display_name: string;
+  status: 'BANNED' | 'FROZEN' | 'RESTRICTED' | 'UNBANNED' | 'ACTIVE';
+  reason: string;
+  incident_id?: string;
+  blocked_at: string;
+  blocked_by: string;
+  expires_at: string | null;
+  active_sessions: number;
+  devices: string[];
+  recent_ips: string[];
+  updated_at: string;
+}
+
+export interface StoredBlockedCountry {
+  id: string;
+  country_code: string;
+  country_name: string;
+  status: 'BLOCKED' | 'RESTRICTED' | 'ALLOWED';
+  reason: string;
+  blocked_at: string;
+  blocked_by: string;
+  updated_at: string;
+}
+
+export interface StoredBlockHistory {
+  event_id: string;
+  entity_type: 'ACCOUNT' | 'IP' | 'DEVICE' | 'SESSION' | 'COUNTRY' | 'LOCKDOWN';
+  entity_id: string;
+  entity_label: string;
+  previous_state: string;
+  new_state: string;
+  actor: string;
+  timestamp: string;
+  reason: string;
+  related_incident_id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StoredAccessLink {
+  id: string;
+  label: string;
+  recipient: string;
+  scope: string;
+  code: string;
+  link_url: string;
+  expires_at: string;
+  is_revoked: boolean;
+  created_by: string;
+  created_at: string;
+  max_uses: number;
+  current_uses: number;
+  last_used_at: string | null;
+}
+
 export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 class DataStore {
@@ -160,6 +218,12 @@ class DataStore {
   public sessions: StoredSecuritySession[] = [];
   public accountSecurity: Map<string, StoredAccountSecurity> = new Map();
   public signedUrlTokens: Map<string, { fileId: string; expiresAt: number }> = new Map();
+
+  // New SOC Collections
+  public blockedAccounts: Map<string, StoredBlockedAccount> = new Map();
+  public blockedCountries: Map<string, StoredBlockedCountry> = new Map();
+  public blockHistory: StoredBlockHistory[] = [];
+  public accessLinks: StoredAccessLink[] = [];
 
   constructor() {
     this.initDefaultData();
@@ -257,6 +321,78 @@ class DataStore {
         updated_at: new Date(Date.now() - 3600000 * 12).toISOString(),
       }
     ]);
+
+    // Seed blocked account for SOC testing
+    const bannedUserKey = 'usr_banned_9921';
+    this.blockedAccounts.set(bannedUserKey, {
+      account_id: bannedUserKey,
+      user_id: bannedUserKey,
+      email: 'threat_actor_09@external-net.org',
+      display_name: 'Suspicious Anomaly Account',
+      status: 'BANNED',
+      reason: 'Automated Threat Engine Trigger — Password Spraying & Unrecognized Device Probe',
+      incident_id: 'inc_sample_101',
+      blocked_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+      blocked_by: 'SECURITY_AUTOMATION',
+      expires_at: null,
+      active_sessions: 0,
+      devices: ['dev_unrecognized_mac'],
+      recent_ips: ['185.220.101.45'],
+      updated_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    });
+
+    // Seed blocked IP
+    this.blockedIPs.push({
+      id: 'blk-001',
+      ip_address: '185.220.101.45',
+      is_cidr: false,
+      reason: 'Known High-Risk Tor Exit Node / Proxy Probe',
+      blocked_by: 'PERIMETER_DEFENSE',
+      is_permanent: true,
+      expires_at: null,
+      is_active: true,
+      created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+    });
+
+    // Seed blocked country
+    this.blockedCountries.set('RU', {
+      id: 'cnt-001',
+      country_code: 'RU',
+      country_name: 'Russian Federation',
+      status: 'BLOCKED',
+      reason: 'Geofence Perimeter Policy — High Anomaly Attack Origin',
+      blocked_at: new Date(Date.now() - 3600000 * 48).toISOString(),
+      blocked_by: 'OWNER_POLICY',
+      updated_at: new Date(Date.now() - 3600000 * 48).toISOString(),
+    });
+
+    // Seed block history
+    this.blockHistory.push(
+      {
+        event_id: `blk_evt_${Date.now() - 3600000 * 24}`,
+        entity_type: 'IP',
+        entity_id: '185.220.101.45',
+        entity_label: '185.220.101.45 (Tor Exit Node)',
+        previous_state: 'ALLOWED',
+        new_state: 'BLOCKED',
+        actor: 'PERIMETER_DEFENSE',
+        timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+        reason: 'Known High-Risk Tor Exit Node / Proxy Probe',
+        related_incident_id: 'inc_sample_101',
+      },
+      {
+        event_id: `blk_evt_${Date.now() - 3600000 * 5}`,
+        entity_type: 'ACCOUNT',
+        entity_id: bannedUserKey,
+        entity_label: 'threat_actor_09@external-net.org',
+        previous_state: 'ACTIVE',
+        new_state: 'BANNED',
+        actor: 'SECURITY_AUTOMATION',
+        timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
+        reason: 'Automated Threat Engine Trigger — Password Spraying',
+        related_incident_id: 'inc_sample_101',
+      }
+    );
 
     // Add initial system startup audit log
     this.auditLogs.unshift({

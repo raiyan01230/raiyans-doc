@@ -35,6 +35,7 @@ import {
   Globe,
   Sliders,
   Mail,
+  UserX,
 } from 'lucide-react';
 import { api, getClientDeviceId } from '../lib/api';
 import { getSupabaseClient } from '../lib/supabase';
@@ -63,6 +64,10 @@ import { SecurityEmailView } from './SecurityEmailView';
 import { SyncConflictModal } from './SyncConflictModal';
 import { IncidentInvestigationModal } from './IncidentInvestigationModal';
 import { ActionConfirmationModal, ActionTargetPayload } from './ActionConfirmationModal';
+import { CentralBlockedHubView } from './CentralBlockedHubView';
+import { RestoreAccessView } from './RestoreAccessView';
+import { InvestigationWorkspace } from './InvestigationWorkspace';
+import { AccessLinksView } from './AccessLinksView';
 
 interface DashboardProps {
   userSession: UserSession;
@@ -80,6 +85,10 @@ type ActiveNavTab =
   | 'audit'
   | 'security'
   | 'blocklist'
+  | 'central-blocked'
+  | 'restore-access'
+  | 'investigation-workspace'
+  | 'access-links'
   | 'health'
   | 'backups'
   | 'email-security';
@@ -116,18 +125,52 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Action & Incident route deep-linking state
   const [investigatingIncidentId, setInvestigatingIncidentId] = useState<string | null>(null);
+  const [restoringEntityId, setRestoringEntityId] = useState<string | null>(null);
   const [actionConfirmation, setActionConfirmation] = useState<ActionTargetPayload | null>(null);
 
-  // Route path parser for direct deep links (e.g. /security/incidents/inc_123, /security/actions/freeze-session/ses_456)
+  const handleNavigateToRoute = (path: string) => {
+    window.history.pushState({}, '', path);
+    if (path.startsWith('/security/investigation/')) {
+      const incId = path.split('/security/investigation/')[1];
+      setInvestigatingIncidentId(incId);
+      setActiveTab('investigation-workspace');
+    } else if (path.startsWith('/security/restore/')) {
+      const entId = path.split('/security/restore/')[1];
+      setRestoringEntityId(entId);
+      setActiveTab('restore-access');
+    } else if (path.startsWith('/security/blocked')) {
+      setActiveTab('central-blocked');
+    } else if (path.startsWith('/security/access-links')) {
+      setActiveTab('access-links');
+    }
+  };
+
+  // Route path parser for direct deep links (e.g. /security/incidents/inc_123, /security/blocked, /security/restore/usr_123)
   const parseCurrentPathRoute = useCallback(() => {
     const path = window.location.pathname;
 
-    if (path.startsWith('/security/incidents/')) {
+    if (path.startsWith('/security/investigation/')) {
+      const incId = path.split('/security/investigation/')[1];
+      if (incId) {
+        setInvestigatingIncidentId(incId);
+        setActiveTab('investigation-workspace');
+      }
+    } else if (path.startsWith('/security/restore/')) {
+      const entId = path.split('/security/restore/')[1];
+      if (entId) {
+        setRestoringEntityId(entId);
+        setActiveTab('restore-access');
+      }
+    } else if (path.startsWith('/security/blocked')) {
+      setActiveTab('central-blocked');
+    } else if (path === '/security/access-links') {
+      setActiveTab('access-links');
+    } else if (path.startsWith('/security/incidents/')) {
       const parts = path.split('/security/incidents/')[1].split('/');
       const incId = parts[0];
       if (incId) {
         setInvestigatingIncidentId(incId);
-        setActiveTab('audit');
+        setActiveTab('investigation-workspace');
       }
     } else if (path.startsWith('/security/devices/')) {
       setActiveTab('devices');
@@ -645,6 +688,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('central-blocked')}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded-lg transition-colors whitespace-nowrap ${
+              activeTab === 'central-blocked'
+                ? 'bg-neutral-800 text-neutral-100 font-semibold border border-neutral-700'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <UserX className="w-3.5 h-3.5 text-red-400" />
+            <span>Central Blocked SOC</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('access-links')}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded-lg transition-colors whitespace-nowrap ${
+              activeTab === 'access-links'
+                ? 'bg-neutral-800 text-neutral-100 font-semibold border border-neutral-700'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <Key className="w-3.5 h-3.5 text-purple-400" />
+            <span>Access Links</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('health')}
             className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded-lg transition-colors whitespace-nowrap ${
               activeTab === 'health'
@@ -998,6 +1065,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* SUBVIEW 5: IP BLOCKLIST */}
         {activeTab === 'blocklist' && <IpBlocklistView onNotify={showNotification} />}
+
+        {/* SUBVIEW: CENTRAL BLOCKED SOC */}
+        {activeTab === 'central-blocked' && <CentralBlockedHubView onNavigateToView={handleNavigateToRoute} />}
+
+        {/* SUBVIEW: ACCESS RESTORATION WORKSPACE */}
+        {activeTab === 'restore-access' && (
+          <RestoreAccessView
+            entityId={restoringEntityId || 'owner'}
+            onBack={() => setActiveTab('central-blocked')}
+            onNavigateToView={handleNavigateToRoute}
+          />
+        )}
+
+        {/* SUBVIEW: DEDICATED INVESTIGATION WORKSPACE */}
+        {activeTab === 'investigation-workspace' && (
+          <InvestigationWorkspace
+            incidentId={investigatingIncidentId || 'inc_001'}
+            onBack={() => setActiveTab('audit')}
+            onNavigateToView={handleNavigateToRoute}
+          />
+        )}
+
+        {/* SUBVIEW: OWNER PASSWORDLESS ACCESS LINKS */}
+        {activeTab === 'access-links' && <AccessLinksView />}
 
         {/* SUBVIEW 6: HEALTH & METRICS */}
         {activeTab === 'health' && <SystemHealthView onNotify={showNotification} />}
