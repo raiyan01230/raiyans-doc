@@ -1,3 +1,4 @@
+import { sanitizeHeaders } from './headerSanitizer';
 import {
   CreateRecordInput,
   PrivateRecord,
@@ -139,19 +140,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const token = getStoredAuthToken();
   const sessionId = getCurrentSessionId();
   const deviceId = getClientDeviceId();
-  const deviceLabel = getClientDeviceLabel();
 
-  const headers: Record<string, string> = {
+  const rawHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-device-id': deviceId,
-    ...(deviceLabel ? { 'x-device-label': deviceLabel } : {}),
     ...(sessionId ? { 'x-session-id': sessionId } : {}),
     ...(options.headers as Record<string, string>),
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    rawHeaders['Authorization'] = `Bearer ${token}`;
   }
+
+  const headers = sanitizeHeaders(rawHeaders, endpoint);
 
   const response = await fetch(endpoint, {
     ...options,
@@ -402,8 +403,10 @@ export const api = {
       formData.append('files', f, filename);
     });
 
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const rawHeaders: Record<string, string> = {};
+    if (token) rawHeaders['Authorization'] = `Bearer ${token}`;
+
+    const headers = sanitizeHeaders(rawHeaders, '/api/files/upload');
 
     const res = await fetch('/api/files/upload', {
       method: 'POST',

@@ -1,3 +1,5 @@
+import { sanitizeHeaders } from '../src/lib/headerSanitizer';
+
 export interface EmailConfig {
   apiKey: string;
   fromAddress: string;
@@ -15,13 +17,16 @@ export async function sendSecurityEmail(subject: string, htmlContent: string) {
   }
 
   try {
+    const rawHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    };
+    const headers = sanitizeHeaders(rawHeaders, 'resend/emails');
+
     // Assuming a standard transactional email API like Resend
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         from: fromAddress,
         to: [alertRecipient],

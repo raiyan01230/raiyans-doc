@@ -2918,7 +2918,7 @@ app.use(analyzeRequestForThreats);
       return res.status(404).json({ error: 'Completed backup payload not found' });
     }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(backup.filename)}"`);
     res.setHeader('Content-Type', 'application/json');
     res.send(backup.data_payload);
   });

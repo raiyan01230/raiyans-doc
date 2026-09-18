@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { BackupItem } from '../types';
+import { sanitizeHeaders } from '../lib/headerSanitizer';
 import {
   Download,
   RotateCcw,
@@ -103,10 +104,12 @@ export function BackupManagerView({ onNotify, onRestoreComplete }: BackupManager
     const token = sessionStorage.getItem('vault_auth_token');
     const downloadUrl = `/api/backups/${encodeURIComponent(backup.id)}/download`;
     // Trigger download with auth token in query or direct fetch
+    const rawHeaders: Record<string, string> = {};
+    if (token) rawHeaders['Authorization'] = `Bearer ${token}`;
+    const headers = sanitizeHeaders(rawHeaders, downloadUrl);
+
     fetch(downloadUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
     })
       .then(res => {
         if (!res.ok) throw new Error('Download failed');
