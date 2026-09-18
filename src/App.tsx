@@ -19,17 +19,7 @@ export default function App() {
         const config = await api.getServerConfig();
         setServerConfig(config);
 
-        // Support direct route deep-linking & email notification auto-login
-        const currentPath = window.location.pathname;
-        const searchParams = new URLSearchParams(window.location.search);
-        const isSecurityRoute = currentPath.startsWith('/security');
-        const isAutoLogin = searchParams.get('autologin') === 'true' || searchParams.has('token');
-
-        let token = getStoredAuthToken();
-        if (!token && (isSecurityRoute || isAutoLogin)) {
-          token = 'demo-token-raiyan3945@gmail.com';
-          setAuthToken(token);
-        }
+        const token = getStoredAuthToken();
 
         // If Supabase is configured on server, initialize client SDK with public URL & anon key
         if (config.isSupabaseConfigured && config.supabaseUrl && config.supabaseAnonKey) {
@@ -45,16 +35,6 @@ export default function App() {
               token: data.session.access_token,
               created_at: data.session.user.created_at,
             });
-          } else if (isSecurityRoute || isAutoLogin || token) {
-            // Fallback owner session for deep security route execution
-            const activeToken = token || 'demo-token-raiyan3945@gmail.com';
-            setAuthToken(activeToken);
-            setUserSession({
-              id: '00000000-0000-0000-0000-000000000001',
-              username: 'raiyan',
-              email: 'raiyan3945@gmail.com',
-              token: activeToken,
-            });
           }
 
           // Listen to auth state transitions
@@ -67,14 +47,13 @@ export default function App() {
                 token: session.access_token,
                 created_at: session.user.created_at,
               });
+            } else {
+              setAuthToken(null);
+              setUserSession(null);
             }
           });
         } else {
-          // Sandbox or fallback mode
-          if (!token && (isSecurityRoute || isAutoLogin)) {
-            token = 'demo-token-raiyan3945@gmail.com';
-            setAuthToken(token);
-          }
+          // Standard session mode
           if (token) {
             const rawIdentifier = decodeURIComponent(token.replace('demo-token-', ''));
             const isEmail = rawIdentifier.includes('@');

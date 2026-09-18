@@ -358,31 +358,31 @@ export async function sendSecurityEmail(options: SecurityEmailParams): Promise<{
         </div>
         
         <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
-          <a href="${baseUrl}/security/incidents/${incidentId}?autologin=true" style="background-color: #fafafa; color: #09090b; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/incidents/${incidentId}" style="background-color: #fafafa; color: #09090b; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
             OPEN INCIDENT
           </a>
           
-          <a href="${baseUrl}/security/incidents/${incidentId}/investigate?autologin=true" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/incidents/${incidentId}/investigate" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             INVESTIGATE
           </a>
 
-          <a href="${baseUrl}/security/devices/${deviceId}?autologin=true" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/devices/${deviceId}" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             VIEW DEVICE
           </a>
 
-          <a href="${baseUrl}/security/sessions/${sessionId}?autologin=true" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/sessions/${sessionId}" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             VIEW SESSION
           </a>
 
-          <a href="${baseUrl}/security/ip/${ipId}?autologin=true" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/ip/${ipId}" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             VIEW IP
           </a>
 
-          <a href="${baseUrl}/security/audit/${incidentId}?autologin=true" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security/audit/${incidentId}" style="background-color: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             AUDIT TIMELINE
           </a>
 
-          <a href="${baseUrl}/security?autologin=true" style="background-color: #27272a; color: #38bdf8; border: 1px solid #0284c7; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
+          <a href="${baseUrl}/security" style="background-color: #27272a; color: #38bdf8; border: 1px solid #0284c7; padding: 10px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; font-family: monospace;">
             SECURITY CENTER
           </a>
         </div>
@@ -390,27 +390,26 @@ export async function sendSecurityEmail(options: SecurityEmailParams): Promise<{
         ${isHighOrCritical ? `
         <div style="margin-top: 16px; padding-top: 16px; border-t: 1px solid #27272a;">
           <div style="font-family: monospace; font-size: 10px; color: #ef4444; margin-bottom: 10px; text-transform: uppercase; font-weight: bold;">
-            EMERGENCY RESPONSE CONTROLS (Direct Authenticated)
+            EMERGENCY RESPONSE CONTROLS (Requires Authentication)
           </div>
           <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;">
-            <a href="${baseUrl}/security/actions/freeze-session/${sessionId}?autologin=true" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+            <a href="${baseUrl}/security/actions/freeze-session/${sessionId}" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
               FREEZE SESSION
             </a>
-            <a href="${baseUrl}/security/actions/block-ip/${ipId}?autologin=true" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+            <a href="${baseUrl}/security/actions/block-ip/${ipId}" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
               BLOCK IP
             </a>
-            <a href="${baseUrl}/security/actions/untrust-device/${deviceId}?autologin=true" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+            <a href="${baseUrl}/security/actions/untrust-device/${deviceId}" style="background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
               REVOKE DEVICE
             </a>
-            <a href="${baseUrl}/security/actions/freeze-account?autologin=true" style="background-color: #ef4444; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+            <a href="${baseUrl}/security/actions/freeze-account" style="background-color: #ef4444; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
               FREEZE ACCOUNT
             </a>
-            <a href="${baseUrl}/security/actions/lockdown?autologin=true" style="background-color: #991b1b; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
+            <a href="${baseUrl}/security/actions/lockdown" style="background-color: #991b1b; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; display: inline-block; font-family: monospace;">
               EMERGENCY LOCKDOWN
             </a>
           </div>
-        </div>
-        ` : ''}
+        </div>` : ''}
       </div>
 
     </div>

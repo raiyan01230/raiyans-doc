@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: private-vault
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SECURITY_ALERT_EMAIL
+        value: raiyan3945@gmail.com
+      - key: SECURITY_EMAIL_FROM
+        value: Private Vault <onboarding@resend.dev>
+      - key: ADMIN_USERNAME
+        value: raiyan
+      - key: ADMIN_CODE
+        value: Raiyan77889
+      - key: APP_URL
+        sync: false

@@ -331,18 +331,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setErrorMessage(null);
   };
 
-  const handleInstantOwnerLogin = () => {
-    setIsLoading(true);
-    const demoToken = 'demo-token-raiyan3945@gmail.com';
-    setAuthToken(demoToken);
-    onLoginSuccess({
-      id: '00000000-0000-0000-0000-000000000001',
-      username: 'raiyan',
-      email: 'raiyan3945@gmail.com',
-      token: demoToken,
-    });
-  };
-
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-center items-center px-4 py-8 select-none font-sans">
       {/* Search Engine Safety Indicator */}
@@ -379,18 +367,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               ? 'Authorized Administrator Authentication'
               : 'Backup Code Accepted — Answer Personal Security Questions'}
           </p>
-
-          {/* 1-Click Instant Owner Login Button */}
-          {step === 'credentials' && (
-            <button
-              type="button"
-              onClick={handleInstantOwnerLogin}
-              className="mt-4 w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 transition-all cursor-pointer border border-emerald-400/30"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>1-Click Owner Access (raiyan3945@gmail.com)</span>
-            </button>
-          )}
         </div>
 
         {/* Error Alert Box */}
