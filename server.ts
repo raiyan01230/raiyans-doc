@@ -40,7 +40,7 @@ import {
 } from './server/networkIntelligence';
 import {
   getEmailConfigStatus,
-  sendSecurityEmail as sendResendSecurityEmail,
+  sendSecurityEmail,
   sendTestSecurityEmail,
   emailDeliveryLogs,
   getNotificationSettings,
@@ -85,7 +85,7 @@ import {
 } from './server/storage';
 import { createFullBackup, restoreBackup } from './server/backup';
 import { analyzeRequestForThreats } from './server/threatEngine';
-import { incidentStore, sessionQuarantine } from './server/incidents';
+import { incidentStore, sessionQuarantine, createIncident } from './server/incidents';
 
 // Load environment variables
 dotenv.config({ path: '.env.local' });
@@ -882,6 +882,32 @@ app.use(analyzeRequestForThreats);
       },
     });
 
+    // Create real security incident record and dispatch Resend alert email
+    await createIncident({
+      severity: isNewDevice ? 'MEDIUM' : 'INFO',
+      event_type: isNewDevice ? 'New Device Authenticated Login' : 'Owner Authentication Event',
+      source_ip: ip,
+      country: networkInfo.country,
+      region: networkInfo.region,
+      city: networkInfo.city,
+      asn: networkInfo.asn,
+      isp: networkInfo.isp,
+      vpn_status: networkInfo.vpn.status ? 'Detected' : 'Not Detected',
+      proxy_status: networkInfo.proxy.status ? 'Detected' : 'Not Detected',
+      device_id: device.deviceId,
+      session_id: sessionId,
+      user_id: DEMO_USER_ID,
+      evidence: `Successful authentication for account "${cleanUsername}" from ${device.os} (${device.browser}) via ${authMethod || 'security code'}.`,
+      automated_actions: [
+        '✓ Owner authentication verified',
+        '✓ Session created and registered',
+        '✓ Device fingerprint authenticated',
+        '✓ Real-time telemetry recorded',
+        '✓ Security alert email dispatched via Resend',
+      ],
+      sendEmail: true,
+    });
+
     // Broadcast device recognition and session creation via SSE
     broadcastSyncEvent(DEMO_USER_ID, 'device_recognized', {
       device,
@@ -979,6 +1005,8 @@ app.use(analyzeRequestForThreats);
     const dev = updateDeviceTrustStatus(userId, deviceId, 'untrusted');
     if (!dev) return res.status(404).json({ error: 'Device not found' });
 
+    const terminatedSessionsCount = terminateSessionsForDevice(deviceId);
+
     recordAuditEvent({
       userId,
       eventType: 'device_untrusted',
@@ -989,10 +1017,30 @@ app.use(analyzeRequestForThreats);
       resourceType: 'device_trust',
       resourceId: deviceId,
       success: true,
+      metadata: { terminatedSessionsCount },
     });
 
-    broadcastSyncEvent(userId, 'device_updated', { device: dev });
-    res.json({ success: true, device: dev });
+    sendSecurityEmail({
+      subject: `[PRIVATE VAULT] SECURITY ACTION: DEVICE TRUST REVOKED (${dev.customLabel || dev.deviceLabel || deviceId})`,
+      eventSummary: `Device ${deviceId} was marked as UNTRUSTED by owner action. ${terminatedSessionsCount} active sessions terminated.`,
+      eventType: 'device_untrusted',
+      severity: 'HIGH',
+      deviceId,
+      details: {
+        status: 'UNTRUSTED',
+        deviceLabel: dev.customLabel || dev.deviceLabel,
+        browser: dev.browser,
+        os: dev.os,
+        actionsTaken: [
+          `✓ Device marked UNTRUSTED`,
+          `✓ ${terminatedSessionsCount} active sessions terminated`,
+          '✓ Re-authentication enforced',
+        ],
+      },
+    }).catch(err => console.error('[DEVICE_UNTRUST_EMAIL_ERROR]', err));
+
+    broadcastSyncEvent(userId, 'device_updated', { device: dev, terminatedSessionsCount });
+    res.json({ success: true, device: dev, terminatedSessionsCount });
   });
 
   app.post('/api/devices/:id/revoke', requireAuth, (req: AuthenticatedRequest, res: Response) => {
@@ -1015,6 +1063,25 @@ app.use(analyzeRequestForThreats);
       success: true,
       metadata: { terminatedSessionsCount },
     });
+
+    sendSecurityEmail({
+      subject: `[PRIVATE VAULT] SECURITY ACTION: DEVICE REVOKED & TERMINATED (${dev.customLabel || dev.deviceLabel || deviceId})`,
+      eventSummary: `Device ${deviceId} was permanently REVOKED by owner action. ${terminatedSessionsCount} active sessions terminated.`,
+      eventType: 'device_revoked',
+      severity: 'HIGH',
+      deviceId,
+      details: {
+        status: 'REVOKED',
+        deviceLabel: dev.customLabel || dev.deviceLabel,
+        browser: dev.browser,
+        os: dev.os,
+        actionsTaken: [
+          `✓ Device status set to REVOKED`,
+          `✓ ${terminatedSessionsCount} active sessions terminated`,
+          '✓ Permanent device trust block recorded',
+        ],
+      },
+    }).catch(err => console.error('[DEVICE_REVOKE_EMAIL_ERROR]', err));
 
     broadcastSyncEvent(userId, 'device_revoked', { deviceId, terminatedSessionsCount });
     res.json({ success: true, device: dev, terminatedSessionsCount });

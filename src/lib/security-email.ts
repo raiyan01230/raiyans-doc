@@ -133,9 +133,9 @@ export interface SecurityEmailParams {
 }
 
 export function resolveAbsoluteBaseUrl(providedUrl?: string): string {
-  let url = providedUrl || process.env.APP_URL || process.env.DEV_APP_URL || '';
+  let url = providedUrl || process.env.APP_BASE_URL || process.env.APP_URL || process.env.DEV_APP_URL || '';
   if (!url || url.trim() === '' || url === '/' || (url.toLowerCase().includes('security') && !url.includes('.'))) {
-    url = 'https://ais-dev-gesecrmyezpwxockt43vz6-880225373442.asia-east1.run.app';
+    url = 'https://raiyans-doc.onrender.com';
   }
   url = url.trim();
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -291,15 +291,15 @@ export async function sendSecurityEmail(options: SecurityEmailParams): Promise<{
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">Country / Region:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${options.details?.country || 'Private Network'} / ${options.details?.region || 'Local Loopback'}</td>
+            <td style="padding: 4px 0; color: #fafafa;">${options.details?.country || 'UNAVAILABLE'} / ${options.details?.region || 'UNAVAILABLE'}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">City:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${options.details?.city || 'Internal Node'}</td>
+            <td style="padding: 4px 0; color: #fafafa;">${options.details?.city || 'UNAVAILABLE'}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">ISP / ASN:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${options.details?.isp || 'Encrypted Tunnel'} (${options.details?.asn || 'AS-LOCAL'})</td>
+            <td style="padding: 4px 0; color: #fafafa;">${options.details?.isp || 'UNAVAILABLE'} (${options.details?.asn || 'UNAVAILABLE'})</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">VPN / Proxy / Tor:</td>
@@ -314,11 +314,11 @@ export async function sendSecurityEmail(options: SecurityEmailParams): Promise<{
         <table style="width: 100%; border-collapse: collapse; color: #e4e4e7;">
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa; width: 35%;">Device ID / Label:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${deviceId} (${options.details?.deviceLabel || 'Verified Hardware'})</td>
+            <td style="padding: 4px 0; color: #fafafa;">${deviceId} (${options.details?.deviceLabel || 'Registered Hardware'})</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">Browser / OS:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${options.details?.browser || 'Chrome'} on ${options.details?.os || 'Linux/Mac'}</td>
+            <td style="padding: 4px 0; color: #fafafa;">${options.details?.browser || 'UNAVAILABLE'} on ${options.details?.os || 'UNAVAILABLE'}</td>
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">Device Trusted:</td>
@@ -330,7 +330,7 @@ export async function sendSecurityEmail(options: SecurityEmailParams): Promise<{
           </tr>
           <tr>
             <td style="padding: 4px 0; color: #a1a1aa;">Session Status:</td>
-            <td style="padding: 4px 0; color: #fafafa;">${options.details?.sessionStatus || 'Quarantined / Restricted'}</td>
+            <td style="padding: 4px 0; color: #fafafa;">${options.details?.sessionStatus || (isHighOrCritical ? 'Quarantined / Restricted' : 'Active Authenticated Session')}</td>
           </tr>
         </table>
       </div>

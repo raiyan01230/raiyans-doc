@@ -35,7 +35,7 @@ export const incidentStore = new Map<string, SecurityIncident>();
 export const sessionQuarantine = new Set<string>();
 export const frozenAccounts = new Set<string>();
 
-export async function createIncident(params: Partial<SecurityIncident>) {
+export async function createIncident(params: Partial<SecurityIncident> & { sendEmail?: boolean }) {
   const incident_id = params.incident_id || `inc_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
   const now = new Date().toISOString();
   
@@ -106,15 +106,17 @@ export async function createIncident(params: Partial<SecurityIncident>) {
        });
        incident.automated_actions.push('✓ Source IP Blocked');
     }
+  }
 
-    // Trigger Email
+  // Trigger Email for all incidents unless explicitly disabled
+  if (params.sendEmail !== false) {
     triggerEmergencyEmail(incident);
   }
 
   return incident;
 }
 
-async function triggerEmergencyEmail(incident: SecurityIncident) {
+export async function triggerEmergencyEmail(incident: SecurityIncident) {
   const subject = `[PRIVATE VAULT] ${incident.severity} SECURITY INCIDENT — ${incident.event_type}`;
   
   const res = await sendSecurityEmail({

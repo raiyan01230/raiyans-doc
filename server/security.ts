@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { store, DEMO_USER_ID, StoredBlockedIP } from './store';
 import { recordAuditEvent } from './monitoring';
+import { sessionQuarantine } from './incidents';
 
 // Helper to convert IPv4 string to integer for CIDR checking
 function ipToInt(ip: string): number {
@@ -104,19 +105,48 @@ export function checkIpBlocklist(req: Request, res: Response, next: NextFunction
 }
 
 // -------------------------------------------------------------
+// SESSION QUARANTINE MIDDLEWARE
+// -------------------------------------------------------------
+export function checkSessionQuarantine(req: any, res: Response, next: NextFunction) {
+  const sessionId = req.headers['x-session-id'] || req.headers['x-client-session-id'] || req.session_id;
+  if (sessionId && sessionQuarantine.has(String(sessionId))) {
+    const isAllowedPath = req.path === '/api/security/status' || req.path === '/api/auth/verify' || req.path.includes('/unquarantine');
+    if (!isAllowedPath) {
+      return res.status(403).json({
+        error: 'SessionQuarantined',
+        message: 'Access Denied: This active session has been placed under emergency security quarantine.',
+        sessionId,
+        quarantined: true,
+      });
+    }
+  }
+  next();
+}
+
+// -------------------------------------------------------------
 // ACCOUNT FROZEN MIDDLEWARE
-// Enforced on modifying operations (POST, PUT, DELETE)
+// Enforced on modifying operations (POST, PUT, DELETE) & sensitive access
 // -------------------------------------------------------------
 export function checkAccountFrozen(req: any, res: Response, next: NextFunction) {
   const userId = req.user?.id || DEMO_USER_ID;
   const security = store.accountSecurity.get(userId);
 
   if (security && security.is_frozen) {
-    // Allow unfreezing and read-only operations
-    const isUnfreezePath = req.path === '/api/security/unfreeze';
-    const isReadOnly = req.method === 'GET';
+    // Allow unfreezing and status check
+    const isAllowedPath =
+      req.path === '/api/security/unfreeze' ||
+      req.path === '/api/security/status' ||
+      req.path.startsWith('/api/security/recovery') ||
+      req.path.startsWith('/api/auth');
 
-    if (!isReadOnly && !isUnfreezePath) {
+    const isSensitiveAccess =
+      req.path.startsWith('/api/files') ||
+      req.path.startsWith('/api/records') ||
+      req.path.startsWith('/api/backups');
+
+    const isReadOnlyNonSensitive = req.method === 'GET' && !isSensitiveAccess;
+
+    if (!isReadOnlyNonSensitive && !isAllowedPath) {
       recordAuditEvent({
         userId,
         eventType: 'account_frozen',
