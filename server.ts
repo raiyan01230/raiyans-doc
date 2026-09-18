@@ -95,8 +95,8 @@ if (!process.env.SECURITY_EMAIL_FROM || process.env.SECURITY_EMAIL_FROM.includes
   process.env.SECURITY_EMAIL_FROM = 'onboarding@resend.dev';
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const safeFilename = typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'server.ts');
+const safeDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(safeFilename);
 
 const PORT = 3000;
 
